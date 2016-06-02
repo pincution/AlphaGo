@@ -22,7 +22,7 @@ def shuffled_hdf5_batch_generator(state_dataset, action_dataset, indices, batch_
 	state_batch_shape = (batch_size,) + state_dataset.shape[1:]
 	game_size = state_batch_shape[-1]
 	Xbatch = np.zeros(state_batch_shape)
-	Ybatch = np.zeros((batch_size, game_size, game_size))
+	Ybatch = np.zeros((batch_size, game_size * game_size))
 	batch_idx = 0
 	while True:
 		for data_idx in indices:
@@ -33,7 +33,7 @@ def shuffled_hdf5_batch_generator(state_dataset, action_dataset, indices, batch_
 			state = np.array([transform(plane) for plane in state_dataset[data_idx]])
 			action = transform(one_hot_action(action_dataset[data_idx], game_size))
 			Xbatch[batch_idx] = state
-			Ybatch[batch_idx] = action
+			Ybatch[batch_idx] = action.flatten()
 			batch_idx += 1
 			if batch_idx == batch_size:
 				batch_idx = 0
@@ -120,7 +120,7 @@ def run_training(cmd_line_args=None):
 	# load model from json spec
 	model = CNNPolicy.load_model(args.model).model
 	if resume:
-		model.load_weights(args.weights)
+		model.load_weights(os.path.join(args.out_directory, args.weights))
 
 	# TODO - (waiting on game_converter) verify that features of model match features of training data
 	dataset = h5.File(args.train_data)
@@ -156,7 +156,7 @@ def run_training(cmd_line_args=None):
 	meta_writer.metadata["model_file"] = args.model
 
 	# create ModelCheckpoint to save weights every epoch
-	checkpoint_template = os.path.join(args.out_directory, "weights.{epoch:02d}.hdf5")
+	checkpoint_template = os.path.join(args.out_directory, "weights.{epoch:05d}.hdf5")
 	checkpointer = ModelCheckpoint(checkpoint_template)
 
 	# load precomputed random-shuffle indices or create them
@@ -195,7 +195,7 @@ def run_training(cmd_line_args=None):
 		BOARD_TRANSFORMATIONS)
 
 	sgd = SGD(lr=args.learning_rate, decay=args.decay)
-	model.compile(loss='binary_crossentropy', optimizer=sgd)
+	model.compile(loss='categorical_crossentropy', optimizer=sgd)
 
 	samples_per_epoch = args.epoch_length or n_train_data
 
@@ -209,6 +209,7 @@ def run_training(cmd_line_args=None):
 		callbacks=[checkpointer, meta_writer],
 		validation_data=val_data_generator,
 		nb_val_samples=n_val_data,
+		show_accuracy=True,
 		nb_worker=args.workers)
 
 if __name__ == '__main__':
